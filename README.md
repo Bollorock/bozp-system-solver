@@ -7,9 +7,19 @@ fills them in, and can optionally click **Vyhodnotit** for you.
 ## Install
 
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey) browser extension.
-2. Create a new userscript and paste in the contents of
-   [`bozp-test-autofiller.user.js`](bozp-test-autofiller.user.js), then save.
+2. Open the raw script URL — Tampermonkey will offer to install it:
+   <https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js>
+   (or create a new userscript manually and paste in
+   [`bozp-test-autofiller.user.js`](bozp-test-autofiller.user.js)).
 3. Open any `bozp-system.cz` page and configure the script (see below).
+
+### Auto-updates
+
+The script declares `@updateURL`/`@downloadURL` pointing at this repository's default
+branch (`HEAD`), so Tampermonkey checks GitHub for new versions on its regular update
+schedule (or via *Utilities → Check for userscript updates*). Bump `@version` in every
+commit that should roll out to users — Tampermonkey only updates when the version number
+increases. Auto-update requires the repository to stay public.
 
 ## Configuration
 

@@ -1,10 +1,13 @@
 // ==UserScript==
 // @name         BOZP Test Auto-Filler
 // @namespace    bollorock.cz
-// @version      1.3.0
+// @version      1.3.1
 // @description  Scrapes BOZP test questions, asks OpenAI to pick the correct answers, fills them in, and optionally submits. Settings panel (API key, model, …) available on any bozp-system.cz page.
 // @author       Bollorock
 // @homepageURL  https://github.com/Bollorock/bozp-system-solver
+// @updateURL    https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js
+// @downloadURL  https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js
+// @supportURL   https://github.com/Bollorock/bozp-system-solver/issues
 // @match        *://www.bozp-system.cz/*
 // @match        *://bozp-system.cz/*
 // @grant        GM_getValue
