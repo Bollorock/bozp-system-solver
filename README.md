@@ -1,4 +1,4 @@
-# BOZP Test Auto-Filler
+# BOZP System Solver
 
 Tampermonkey/Violentmonkey userscript for `bozp-system.cz` training tests. It scrapes the
 multiple-choice questions from the page, asks an OpenAI model to pick the correct answers,
@@ -8,9 +8,9 @@ fills them in, and can optionally click **Vyhodnotit** for you.
 
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey) browser extension.
 2. Open the raw script URL — Tampermonkey will offer to install it:
-   <https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js>
+   <https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-system-solver.user.js>
    (or create a new userscript manually and paste in
-   [`bozp-test-autofiller.user.js`](bozp-test-autofiller.user.js)).
+   [`bozp-system-solver.user.js`](bozp-system-solver.user.js)).
 3. Open any `bozp-system.cz` page and configure the script (see below).
 
 ### Auto-updates

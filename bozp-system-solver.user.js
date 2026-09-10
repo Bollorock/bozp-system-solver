@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         BOZP Test Auto-Filler
+// @name         BOZP System Solver
 // @namespace    bollorock.cz
-// @version      1.3.1
+// @version      1.4.0
 // @description  Scrapes BOZP test questions, asks OpenAI to pick the correct answers, fills them in, and optionally submits. Settings panel (API key, model, …) available on any bozp-system.cz page.
 // @author       Bollorock
 // @homepageURL  https://github.com/Bollorock/bozp-system-solver
-// @updateURL    https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js
-// @downloadURL  https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-test-autofiller.user.js
+// @updateURL    https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-system-solver.user.js
+// @downloadURL  https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-system-solver.user.js
 // @supportURL   https://github.com/Bollorock/bozp-system-solver/issues
 // @match        *://www.bozp-system.cz/*
 // @match        *://bozp-system.cz/*
@@ -78,7 +78,7 @@
       boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
       cursor: "pointer",
     });
-    statusBox.title = "BOZP Auto-Filler — click for settings (Alt+Shift+C)";
+    statusBox.title = "BOZP System Solver — click for settings (Alt+Shift+C)";
     statusBox.textContent = "⏳ Waiting for questions…";
     statusBox.addEventListener("click", () => openConfig());
     (document.body || document.documentElement).appendChild(statusBox);
@@ -128,7 +128,7 @@
         #bozp-af-config #bozp-af-msg { margin-top: 10px; font-size: 12px; min-height: 16px;
           word-break: break-word; }
       </style>
-      <h3>⚙️ BOZP Auto-Filler settings</h3>
+      <h3>⚙️ BOZP System Solver settings</h3>
 
       <label class="row" for="bozp-af-key">OpenAI API key</label>
       <input type="password" id="bozp-af-key" placeholder="sk-…" autocomplete="off">
