@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BOZP System Solver
 // @namespace    bollorock.cz
-// @version      1.4.0
-// @description  Scrapes BOZP test questions, asks OpenAI to pick the correct answers, fills them in, and optionally submits. Settings panel (API key, model, …) available on any bozp-system.cz page.
+// @version      2.0.0
+// @description  Scrapes BOZP test questions, asks Claude (Anthropic API) to pick the correct answers, fills them in, and optionally submits. Settings panel (API key, model, …) available on any bozp-system.cz page.
 // @author       Bollorock
 // @homepageURL  https://github.com/Bollorock/bozp-system-solver
 // @updateURL    https://raw.githubusercontent.com/Bollorock/bozp-system-solver/HEAD/bozp-system-solver.user.js
@@ -13,40 +13,46 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
-// @connect      api.openai.com
+// @connect      api.anthropic.com
 // ==/UserScript==
 
 (function () {
   "use strict";
 
   /** ───────────── Settings ───────────── **/
+  // Storage keys differ from the pre-2.0 OpenAI ones so stale gpt-* settings are ignored.
   const DEFAULTS = {
-    OPENAI_API_KEY: "",
-    MODEL: "gpt-5-mini",         // recommended: accurate on these questions, cheap and fast
-    CUSTOM_MODEL: "",
-    REASONING_EFFORT: "minimal", // only sent for gpt-5* models
-    MAX_OUTPUT_TOKENS: 2000,     // gpt-5 models spend part of this on reasoning
+    ANTHROPIC_API_KEY: "",
+    CLAUDE_MODEL: "claude-opus-5-5",
+    CLAUDE_CUSTOM_MODEL: "",
+    EFFORT: "low",               // simple multiple choice — low effort is fast and cheap
+    MAX_TOKENS: 16000,           // includes thinking tokens; only what is used gets billed
     AUTO_RUN: true,              // fill automatically when a test page loads
     AUTO_SUBMIT: false,          // click "Vyhodnotit" after filling
   };
 
   const MODEL_PRESETS = [
-    ["gpt-5-mini", "gpt-5-mini — recommended (accurate + cheap)"],
-    ["gpt-5-nano", "gpt-5-nano — cheapest, usually enough"],
-    ["gpt-5.1", "gpt-5.1 — strongest, overkill here"],
-    ["gpt-4.1-mini", "gpt-4.1-mini — old default, still fine"],
-    ["gpt-4o-mini", "gpt-4o-mini — legacy"],
+    ["claude-opus-5-5", "Claude Opus 5.5 — default"],
+    ["claude-sonnet-5-5", "Claude Sonnet 5.5 — cheaper, faster"],
+    ["claude-haiku-5-5", "Claude Haiku 5.5 — cheapest"],
+    ["claude-fable-5-1", "Claude Fable 5.1 — most capable, overkill here"],
     ["custom", "Custom model ID…"],
   ];
 
   const EFFORT_OPTIONS = [
     ["default", "default (omit parameter)"],
-    ["minimal", "minimal — fastest (gpt-5 family)"],
-    ["none", "none (gpt-5.1 only)"],
-    ["low", "low"],
+    ["low", "low — fastest/cheapest"],
     ["medium", "medium"],
     ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "max"],
   ];
+
+  // Models that accept server-side refusal fallbacks (fallbacks: "default").
+  const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
+
+  const API_URL = "https://api.anthropic.com/v1/messages";
+  const API_VERSION = "2026-10-21";
 
   const MAX_WAIT_MS = 10000;
   const RETRY_INTERVAL_MS = 250;
@@ -56,8 +62,8 @@
   const setCfg = (key, value) => GM_setValue(key, value);
 
   function activeModel() {
-    const m = cfg("MODEL");
-    return m === "custom" ? ((cfg("CUSTOM_MODEL") || "").trim() || DEFAULTS.MODEL) : m;
+    const m = cfg("CLAUDE_MODEL");
+    return m === "custom" ? ((cfg("CLAUDE_CUSTOM_MODEL") || "").trim() || DEFAULTS.CLAUDE_MODEL) : m;
   }
 
   /** ───────────── Status Indicator (test pages only) ───────────── **/
@@ -130,21 +136,21 @@
       </style>
       <h3>⚙️ BOZP System Solver settings</h3>
 
-      <label class="row" for="bozp-af-key">OpenAI API key</label>
-      <input type="password" id="bozp-af-key" placeholder="sk-…" autocomplete="off">
+      <label class="row" for="bozp-af-key">Anthropic API key</label>
+      <input type="password" id="bozp-af-key" placeholder="sk-ant-…" autocomplete="off">
       <div class="chk"><input type="checkbox" id="bozp-af-showkey"><label for="bozp-af-showkey">Show key</label></div>
 
       <label class="row" for="bozp-af-model">Model</label>
       <select id="bozp-af-model"></select>
-      <input type="text" id="bozp-af-custom" placeholder="custom model ID, e.g. gpt-5.2-mini" style="display:none; margin-top:4px;">
+      <input type="text" id="bozp-af-custom" placeholder="custom model ID, e.g. claude-opus-5" style="display:none; margin-top:4px;">
 
-      <label class="row" for="bozp-af-effort">Reasoning effort (gpt-5 models only)</label>
+      <label class="row" for="bozp-af-effort">Effort</label>
       <select id="bozp-af-effort"></select>
-      <div class="hint">"minimal" = fastest/cheapest for gpt-5 / gpt-5-mini / gpt-5-nano; gpt-5.1 uses "none" instead.</div>
+      <div class="hint">How hard Claude thinks. "low" is plenty for these questions.</div>
 
-      <label class="row" for="bozp-af-tokens">Max output tokens</label>
-      <input type="number" id="bozp-af-tokens" min="100" step="100">
-      <div class="hint">gpt-5 models spend part of this budget on internal reasoning — keep ≥ 1000.</div>
+      <label class="row" for="bozp-af-tokens">Max tokens</label>
+      <input type="number" id="bozp-af-tokens" min="1000" step="1000">
+      <div class="hint">Thinking counts toward this limit — keep ≥ 4000.</div>
 
       <div class="chk"><input type="checkbox" id="bozp-af-autorun"><label for="bozp-af-autorun">Auto-fill when a test page loads</label></div>
       <div class="chk"><input type="checkbox" id="bozp-af-autosubmit"><label for="bozp-af-autosubmit">Auto-submit (click „Vyhodnotit“) after filling</label></div>
@@ -166,11 +172,11 @@
     const effortSel = $("bozp-af-effort");
     for (const [val, label] of EFFORT_OPTIONS) effortSel.add(new Option(label, val));
 
-    $("bozp-af-key").value = cfg("OPENAI_API_KEY");
-    modelSel.value = cfg("MODEL");
-    $("bozp-af-custom").value = cfg("CUSTOM_MODEL");
-    effortSel.value = cfg("REASONING_EFFORT");
-    $("bozp-af-tokens").value = cfg("MAX_OUTPUT_TOKENS");
+    $("bozp-af-key").value = cfg("ANTHROPIC_API_KEY");
+    modelSel.value = cfg("CLAUDE_MODEL");
+    $("bozp-af-custom").value = cfg("CLAUDE_CUSTOM_MODEL");
+    effortSel.value = cfg("EFFORT");
+    $("bozp-af-tokens").value = cfg("MAX_TOKENS");
     $("bozp-af-autorun").checked = !!cfg("AUTO_RUN");
     $("bozp-af-autosubmit").checked = !!cfg("AUTO_SUBMIT");
 
@@ -190,11 +196,11 @@
     };
 
     $("bozp-af-save").addEventListener("click", () => {
-      setCfg("OPENAI_API_KEY", $("bozp-af-key").value.trim());
-      setCfg("MODEL", modelSel.value);
-      setCfg("CUSTOM_MODEL", $("bozp-af-custom").value.trim());
-      setCfg("REASONING_EFFORT", effortSel.value);
-      setCfg("MAX_OUTPUT_TOKENS", Math.max(100, Number($("bozp-af-tokens").value) || DEFAULTS.MAX_OUTPUT_TOKENS));
+      setCfg("ANTHROPIC_API_KEY", $("bozp-af-key").value.trim());
+      setCfg("CLAUDE_MODEL", modelSel.value);
+      setCfg("CLAUDE_CUSTOM_MODEL", $("bozp-af-custom").value.trim());
+      setCfg("EFFORT", effortSel.value);
+      setCfg("MAX_TOKENS", Math.max(1000, Number($("bozp-af-tokens").value) || DEFAULTS.MAX_TOKENS));
       setCfg("AUTO_RUN", $("bozp-af-autorun").checked);
       setCfg("AUTO_SUBMIT", $("bozp-af-autosubmit").checked);
       closeConfig();
@@ -210,11 +216,11 @@
         return;
       }
       const model = modelSel.value === "custom"
-        ? ($("bozp-af-custom").value.trim() || DEFAULTS.MODEL)
+        ? ($("bozp-af-custom").value.trim() || DEFAULTS.CLAUDE_MODEL)
         : modelSel.value;
       msg(`Testing ${model}…`, "#ff0");
       try {
-        await callOpenAI(key, model, effortSel.value, 500, "Reply with the single word OK.");
+        await callClaude(key, model, "low", 2000, "Reply with the single word OK.");
         msg(`✅ ${model} responded — key and model work.`);
       } catch (e) {
         msg("❌ " + (e.message || e), "#f66");
@@ -262,57 +268,84 @@
     return items;
   }
 
-  /** ───────────── OpenAI Responses API ───────────── **/
-  async function callOpenAI(apiKey, model, effort, maxOutputTokens, input) {
-    const body = { model, input, max_output_tokens: maxOutputTokens };
-    if (/^gpt-5/.test(model) && effort && effort !== "default") {
-      body.reasoning = { effort };
+  /** ───────────── Anthropic Messages API ───────────── **/
+  const ANSWERS_SCHEMA = {
+    type: "object",
+    properties: {
+      answers: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            questionId: { type: "string" },
+            answerId: { type: "string" },
+          },
+          required: ["questionId", "answerId"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["answers"],
+    additionalProperties: false,
+  };
+
+  async function callClaude(apiKey, model, effort, maxTokens, prompt, schema) {
+    const body = {
+      model,
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
+    };
+    const outputConfig = {};
+    if (effort && effort !== "default") outputConfig.effort = effort;
+    if (schema) outputConfig.format = { type: "json_schema", schema };
+    if (Object.keys(outputConfig).length) body.output_config = outputConfig;
+
+    const headers = {
+      "x-api-key": apiKey,
+      "anthropic-version": API_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true", // required for CORS from a web page
+      "Content-Type": "application/json",
+    };
+    if (FALLBACK_MODELS.has(model)) {
+      // On a safety-classifier refusal, let the API retry on its recommended fallback model.
+      body.fallbacks = "default";
+      headers["anthropic-beta"] = "server-side-fallback-2026-07-01";
     }
 
-    const res = await fetch("https://api.openai.com/v1/responses", {
+    const res = await fetch(API_URL, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
+      headers,
       body: JSON.stringify(body)
     });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`OpenAI error ${res.status}: ${errText}`);
+      throw new Error(`Anthropic API error ${res.status}: ${errText}`);
     }
 
     const data = await res.json();
-    const text = extractOutputText(data);
+    if (data?.stop_reason === "refusal") {
+      throw new Error("Claude declined to answer (refusal) — try again or pick another model in ⚙️ settings.");
+    }
+    const text = (data?.content || [])
+      .filter((c) => c?.type === "text" && typeof c.text === "string")
+      .map((c) => c.text)
+      .join("")
+      .trim();
     if (!text) {
-      if (data?.status === "incomplete" && data?.incomplete_details?.reason === "max_output_tokens") {
-        throw new Error("Hit the output-token limit before answering — raise “Max output tokens” or lower reasoning effort in ⚙️ settings.");
+      if (data?.stop_reason === "max_tokens") {
+        throw new Error("Hit the max-tokens limit before answering — raise “Max tokens” or lower effort in ⚙️ settings.");
       }
       throw new Error("Model returned an empty response.");
     }
     return text;
   }
 
-  function extractOutputText(data) {
-    if (typeof data?.output_text === "string" && data.output_text.trim()) {
-      return data.output_text.trim();
-    }
-    const parts = [];
-    for (const item of data?.output || []) {
-      if (item?.type && item.type !== "message") continue; // skip reasoning items
-      for (const c of item?.content || []) {
-        if (typeof c?.text === "string") parts.push(c.text);
-      }
-    }
-    return parts.join("").trim();
-  }
-
-  async function askOpenAI(questions) {
-    const apiKey = (cfg("OPENAI_API_KEY") || "").trim();
+  async function askClaude(questions) {
+    const apiKey = (cfg("ANTHROPIC_API_KEY") || "").trim();
     if (!apiKey) {
       openConfig();
-      throw new Error("No OpenAI API key set — enter it in the ⚙️ settings panel.");
+      throw new Error("No Anthropic API key set — enter it in the ⚙️ settings panel.");
     }
 
     const model = activeModel();
@@ -321,25 +354,27 @@
     const prompt = [
       "You are given Czech workplace safety (BOZP) multiple-choice questions.",
       "For each question, pick EXACTLY ONE best answer.",
-      "Return a STRICT JSON array of objects [{questionId, answerId}] with NO extra text.",
+      'Respond with JSON of the form {"answers": [{"questionId": "...", "answerId": "..."}]}, one entry per question.',
       "",
       "Questions:",
       JSON.stringify(questions, null, 2)
     ].join("\n");
 
-    const text = await callOpenAI(
+    const text = await callClaude(
       apiKey,
       model,
-      cfg("REASONING_EFFORT"),
-      Number(cfg("MAX_OUTPUT_TOKENS")) || DEFAULTS.MAX_OUTPUT_TOKENS,
-      prompt
+      cfg("EFFORT"),
+      Number(cfg("MAX_TOKENS")) || DEFAULTS.MAX_TOKENS,
+      prompt,
+      ANSWERS_SCHEMA
     );
 
     const json = extractJson(text);
-    if (!Array.isArray(json)) throw new Error("Model did not return a JSON array.");
+    const picks = Array.isArray(json) ? json : json?.answers;
+    if (!Array.isArray(picks)) throw new Error("Model did not return a list of answers.");
 
     setStatus(`✅ Got answers from ${model}.`, "#0f0");
-    return json;
+    return picks;
   }
 
   function extractJson(s) {
@@ -383,7 +418,7 @@
       return;
     }
     try {
-      const picks = await askOpenAI(questions);
+      const picks = await askClaude(questions);
       let ok = 0;
       for (const { questionId, answerId } of picks) {
         if (selectAnswer(questionId, String(answerId))) ok++;

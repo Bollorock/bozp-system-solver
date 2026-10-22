@@ -1,7 +1,7 @@
 # BOZP System Solver
 
 Tampermonkey/Violentmonkey userscript for `bozp-system.cz` training tests. It scrapes the
-multiple-choice questions from the page, asks an OpenAI model to pick the correct answers,
+multiple-choice questions from the page, asks Claude (via the Anthropic API) to pick the correct answers,
 fills them in, and can optionally click **Vyhodnotit** for you.
 
 ## Install
@@ -31,10 +31,10 @@ The settings panel is available on **any** `bozp-system.cz` page, three ways:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| OpenAI API key | — | Your `sk-…` key, stored in the userscript manager's storage |
-| Model | `gpt-5-mini` | Preset list, or pick *Custom* and type any model ID |
-| Reasoning effort | `minimal` | Sent only for `gpt-5*` models. `minimal` is fastest/cheapest for gpt-5 / -mini / -nano; `gpt-5.1` uses `none` instead |
-| Max output tokens | `2000` | gpt-5 models spend part of this budget on internal reasoning, so keep it ≥ 1000 |
+| Anthropic API key | — | Your `sk-ant-…` key from <https://platform.claude.com/>, stored in the userscript manager's storage |
+| Model | `claude-opus-5-5` | Preset list, or pick *Custom* and type any Claude model ID |
+| Effort | `low` | How much Claude thinks (`low` … `max`, or `default` to omit). `low` is plenty for these questions |
+| Max tokens | `16000` | Thinking counts toward this limit, so keep it ≥ 4000. Only tokens actually used are billed |
 | Auto-fill on load | on | Run automatically when a test page opens |
 | Auto-submit | off | Click „Vyhodnotit" after filling |
 
@@ -44,30 +44,37 @@ verifies your key + model with a tiny request, **Esc** closes the panel.
 ## Which model should I use?
 
 These tests are short, simple Czech multiple-choice questions with one clearly correct
-answer — any current model answers them essentially perfectly, so optimize for **cost and
-speed**, not capability:
+answer, so every preset answers them reliably:
 
-- **`gpt-5-mini` (recommended, the default)** — effectively 100 % on questions like these,
-  and with reasoning effort `minimal` it responds in a couple of seconds. A whole test costs
-  a fraction of a cent.
-- **`gpt-5-nano`** — even cheaper; fine if you want the absolute minimum spend.
-- **`gpt-4.1-mini`** — the old default; still works fine (no reasoning parameter needed).
-- **`gpt-5.1` / `gpt-5`** — overkill for this task; slower and more expensive with no
-  practical accuracy gain.
+- **Claude Opus 5.5 (`claude-opus-5-5`, the default)** — the current Opus model; with
+  effort `low` it answers a whole test quickly.
+- **Claude Sonnet 5.5 (`claude-sonnet-5-5`)** — about half the price of Opus 5.5.
+- **Claude Haiku 5.5 (`claude-haiku-5-5`)** — the cheapest option, if you want the
+  minimum spend.
+- **Claude Fable 5.1 (`claude-fable-5-1`)** — the most capable model; overkill here.
+
+On Opus 5.5, Sonnet 5.5 and Fable 5.1 the script enables server-side refusal fallbacks
+(`fallbacks: "default"`), so if a safety classifier declines a request the API retries it on
+a fallback model automatically.
 
 ## Troubleshooting
 
-- **`OpenAI error 429 … insufficient_quota / credit_balance_exhausted`** — your OpenAI
-  account is out of API credits. No model or script change fixes this; add credits at
-  <https://platform.openai.com/settings/organization/billing/>.
-- **"Hit the output-token limit before answering"** — raise *Max output tokens* or lower
-  *Reasoning effort* in settings.
-- **`400` error mentioning `reasoning`** — the selected model doesn't accept the chosen
-  reasoning effort (e.g. `minimal` on `gpt-5.1`, or any effort on a non-gpt-5 model where
-  it is omitted automatically). Set effort to `default`.
+- **`Anthropic API error 401`** — the API key is wrong or revoked. Check it in ⚙️ settings.
+- **`Anthropic API error 400 … credit balance is too low`** — your Anthropic account is out of
+  API credits; add credits in the Claude Console billing settings.
+- **"Hit the max-tokens limit before answering"** — raise *Max tokens* or lower *Effort*.
+- **"Claude declined to answer (refusal)"** — re-run with Alt+Shift+O, or switch model.
+- **`400` error mentioning `effort`** — the custom model you entered doesn't support that
+  effort level. Set effort to `default`.
+
+### Upgrading from 1.x (OpenAI)
+
+Version 2.0 switched from OpenAI to the Anthropic API. Settings are stored under new keys,
+so after updating open ⚙️ settings and enter an Anthropic API key — the old OpenAI key and
+model are ignored.
 
 ## Notes
 
 - Use this only on your own tests/accounts.
 - The API key is stored via `GM_setValue` in your userscript manager profile and is sent
-  only to `api.openai.com`.
+  only to `api.anthropic.com`.
